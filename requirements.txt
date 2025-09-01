@@ -1,0 +1,20 @@
+# Core ONNX Runtime for model inference
+onnxruntime>=1.16.0
+
+# Numerical computing and array operations
+numpy>=1.21.0
+
+# Image processing and manipulation
+Pillow>=8.0.0
+
+# HTTP requests for downloading models
+requests>=2.25.0
+
+# Optional: For better performance on GPU (if available)
+# onnxruntime-gpu>=1.16.0
+
+# Optional: For additional image processing capabilities
+# opencv-python>=4.5.0
+
+# Optional: For visualization and plotting
+# matplotlib>=3.3.0
