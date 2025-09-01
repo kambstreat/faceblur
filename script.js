@@ -2,6 +2,7 @@
 // Global variables
 let session = null;
 let selectedImage = null;
+let originalImageElement = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
@@ -11,24 +12,66 @@ document.addEventListener('DOMContentLoaded', function() {
 // Initialize the application
 async function initializeApp() {
     try {
-        
         // Set up file input listener
         document.getElementById('imageInput').addEventListener('change', handleImageUpload);
         
-        console.log('Application initialized successfully');
+        // Set up drag and drop
+        const uploadContainer = document.getElementById('uploadContainer');
+        uploadContainer.addEventListener('click', () => document.getElementById('imageInput').click());
+        uploadContainer.addEventListener('dragover', handleDragOver);
+        uploadContainer.addEventListener('dragleave', handleDragLeave);
+        uploadContainer.addEventListener('drop', handleDrop);
+        
+        // Set up detect button
+        document.getElementById('detectBtn').addEventListener('click', detectFaces);
+        
+        console.log('Face Blur Studio initialized successfully');
     } catch (error) {
         console.error('Failed to initialize application:', error);
         showStatus('Failed to initialize application: ' + error.message, 'error');
     }
 }
 
+// Handle drag over
+function handleDragOver(e) {
+    e.preventDefault();
+    e.currentTarget.classList.add('dragover');
+}
+
+// Handle drag leave
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+}
+
+// Handle drop
+function handleDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFile(files[0]);
+    }
+}
+
 // Handle image upload
 function handleImageUpload(event) {
     const file = event.target.files[0];
-    if (!file) return;
+    if (file) {
+        handleFile(file);
+    }
+}
 
+// Handle file processing
+function handleFile(file) {
     if (!file.type.startsWith('image/')) {
         showStatus('Please select a valid image file', 'error');
+        return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        showStatus('File size must be less than 10MB', 'error');
         return;
     }
 
@@ -37,24 +80,119 @@ function handleImageUpload(event) {
         selectedImage = e.target.result;
         displayImagePreview(selectedImage);
         document.getElementById('detectBtn').disabled = false;
-        showStatus('Image uploaded successfully. Click "Detect Faces" to proceed.', 'success');
+        showStatus('Image uploaded successfully. Click "Detect & Blur Faces" to proceed.', 'success');
     };
     reader.readAsDataURL(file);
 }
 
 // Display image preview
 function displayImagePreview(imageSrc) {
-    const preview = document.getElementById('imagePreview');
-    const previewImg = document.getElementById('previewImage');
-    
-    previewImg.src = imageSrc;
-    preview.style.display = 'block';
-    
     // Hide previous results
-    document.getElementById('detectionResults').style.display = 'none';
+    document.getElementById('results').style.display = 'none';
+    
+    // Show processing layout with preview (no top preview)
+    showProcessingLayoutWithPreview(imageSrc);
 }
 
-// Detect faces using the Yunet model
+// Show processing layout with preview
+function showProcessingLayoutWithPreview(imageSrc) {
+    const mainContainer = document.querySelector('.main-container');
+    const processingLayout = document.getElementById('processingLayout');
+    const uploadContainer = document.getElementById('uploadContainer');
+    const detectBtn = document.getElementById('detectBtn');
+    
+    // Hide upload area and detect button
+    uploadContainer.style.display = 'none';
+    detectBtn.style.display = 'none';
+    
+    // Show processing layout
+    processingLayout.classList.add('active');
+    mainContainer.classList.add('processing-view');
+    
+    // Show uploaded image in preview area
+    const previewArea = document.getElementById('previewArea');
+    previewArea.innerHTML = `<img src="${imageSrc}" class="preview-image" alt="Uploaded Image">`;
+    previewArea.classList.add('has-image');
+    
+    // Store reference to the image element
+    originalImageElement = previewArea.querySelector('img');
+    
+    // Update processing button to show "Detect Faces"
+    const processingBtn = document.getElementById('processingBtn');
+    processingBtn.disabled = false;
+    processingBtn.innerHTML = '<div class="refresh-icon"></div>Detect Faces';
+    processingBtn.onclick = detectFaces;
+    
+    // Set up processing layout controls
+    setupProcessingControls();
+}
+
+// Setup processing layout controls
+function setupProcessingControls() {
+    // Intensity slider
+    const intensitySlider = document.getElementById('intensitySlider');
+    const intensityValue = document.getElementById('intensityValue');
+    
+    intensitySlider.addEventListener('input', function() {
+        intensityValue.textContent = this.value + '%';
+    });
+    
+    // Process another button
+    document.getElementById('processAnotherBtn').addEventListener('click', function() {
+        resetToUploadView();
+    });
+    
+    // Clear image button
+    document.getElementById('clearImageBtn').addEventListener('click', function() {
+        resetToUploadView();
+    });
+    
+    // Show original button
+    document.getElementById('showOriginalBtn').addEventListener('click', function() {
+        showOriginalImage();
+    });
+}
+
+// Reset to upload view
+function resetToUploadView() {
+    const mainContainer = document.querySelector('.main-container');
+    const processingLayout = document.getElementById('processingLayout');
+    const uploadContainer = document.getElementById('uploadContainer');
+    const detectBtn = document.getElementById('detectBtn');
+    const results = document.getElementById('results');
+    
+    // Hide processing layout
+    processingLayout.classList.remove('active');
+    mainContainer.classList.remove('processing-view');
+    
+    // Show upload area and detect button
+    uploadContainer.style.display = 'block';
+    detectBtn.style.display = 'block';
+    
+    // Hide results
+    results.style.display = 'none';
+    
+    // Reset form
+    document.getElementById('imageInput').value = '';
+    selectedImage = null;
+    originalImageElement = null;
+    detectBtn.disabled = true;
+    
+    // Clear status
+    document.getElementById('status').style.display = 'none';
+}
+
+// Show original image
+function showOriginalImage() {
+    const previewArea = document.getElementById('previewArea');
+    
+    if (selectedImage) {
+        previewArea.innerHTML = `<img src="${selectedImage}" class="preview-image" alt="Original Image">`;
+        previewArea.classList.add('has-image');
+    }
+}
+
+// Detect faces using the RetinaFace model
 async function detectFaces() {
     if (!selectedImage) {
         showStatus('Please upload an image first', 'error');
@@ -62,26 +200,69 @@ async function detectFaces() {
     }
 
     try {
-        showStatus('Loading RetinaFace model...', 'loading');
+        // Show processing state in preview area
+        showProcessingState();
         
         // Load the model if not already loaded
         if (!session) {
             session = await loadRetinaFaceModel();
         }
         
-        showStatus('Processing image...', 'loading');
-        
         // Process the image
         const results = await processImage(selectedImage);
         
-        // Display results
-        displayResults(results);
-        showStatus('Face detection completed successfully!', 'success');
+        // Display results in preview area
+        displayProcessedImage(results);
         
     } catch (error) {
         console.error('Face detection failed:', error);
-        showStatus('Face detection failed: ' + error.message, 'error');
+        showProcessingError(error.message);
     }
+}
+
+// Show processing state
+function showProcessingState() {
+    const previewArea = document.getElementById('previewArea');
+    const processingBtn = document.getElementById('processingBtn');
+    
+    previewArea.innerHTML = `
+        <div class="processing-spinner"></div>
+        <div class="processing-text">Processing with ML server...</div>
+    `;
+    previewArea.classList.remove('has-image');
+    
+    processingBtn.disabled = true;
+}
+
+// Display processed image
+function displayProcessedImage(results) {
+    const previewArea = document.getElementById('previewArea');
+    const processingBtn = document.getElementById('processingBtn');
+    
+    if (results.processedImage) {
+        previewArea.innerHTML = `<img src="${results.processedImage}" class="preview-image" alt="Processed Image">`;
+        previewArea.classList.add('has-image');
+    }
+    
+    processingBtn.disabled = false;
+    processingBtn.innerHTML = '<div class="refresh-icon"></div>Process Complete';
+}
+
+// Show processing error
+function showProcessingError(message) {
+    const previewArea = document.getElementById('previewArea');
+    const processingBtn = document.getElementById('processingBtn');
+    
+    previewArea.innerHTML = `
+        <div style="color: #c62828; text-align: center;">
+            <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
+            <div>Processing failed: ${message}</div>
+        </div>
+    `;
+    previewArea.classList.remove('has-image');
+    
+    processingBtn.disabled = false;
+    processingBtn.innerHTML = '<div class="refresh-icon"></div>Retry Processing';
 }
 
 
@@ -364,8 +545,12 @@ async function postprocessResults(outputs, originalWidth, originalHeight, scale,
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Get the original image
-          const originalImage = document.getElementById('previewImage');
+          // Get the original image from stored reference
+          if (!originalImageElement) {
+              throw new Error('No image found - please upload an image first');
+          }
+          
+          const originalImage = originalImageElement;
           
           // Set canvas size to match the original image
           canvas.width = originalImage.naturalWidth;
@@ -375,10 +560,10 @@ async function postprocessResults(outputs, originalWidth, originalHeight, scale,
           ctx.drawImage(originalImage, 0, 0);
           
           // Draw bounding boxes
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 10;
+          ctx.strokeStyle = '#ff6b35';
+          ctx.lineWidth = 3;
           ctx.font = '16px Arial';
-          ctx.fillStyle = 'red';
+          ctx.fillStyle = '#ff6b35';
           
           boxes.forEach((box, index) => {
               const [x1, y1, x2, y2] = box;
@@ -402,12 +587,11 @@ async function postprocessResults(outputs, originalWidth, originalHeight, scale,
           //link.download = 'face_detection_result.png';
           //link.click();
           
-          // Display the annotated image
-          const imagePreview = document.getElementById('imagePreview');
-          const previewImg = document.getElementById('previewImage');
-          previewImg.src = canvas.toDataURL('image/png');
-          imagePreview.style.display = 'block';
-         return data;   
+          return {
+              boxes: boxes,
+              confidence: confidence,
+              processedImage: canvas.toDataURL('image/png')
+          };   
     }
     catch (error) {
         console.error('Post-processing failed:', error);
@@ -417,12 +601,17 @@ async function postprocessResults(outputs, originalWidth, originalHeight, scale,
 
 // Display detection results
 function displayResults(results) {
-    const resultsDiv = document.getElementById('detectionResults');
-    const contentDiv = document.getElementById('resultsContent');
+    const resultsDiv = document.getElementById('results');
+    const statsDiv = document.getElementById('resultStats');
     
-    let html = `<p><strong>Faces Detected:</strong> ${JSON.parse(results.body).boxes.length}</p>`;
+    let html = `<h3>Detection Results</h3>`;
+    html += `<p><strong>Faces Detected:</strong> ${results.boxes.length}</p>`;
     
-    contentDiv.innerHTML = html;
+    if (results.boxes.length > 0) {
+        html += `<p><strong>Average Confidence:</strong> ${(results.confidence.reduce((sum, conf) => sum + conf[0], 0) / results.confidence.length * 100).toFixed(1)}%</p>`;
+    }
+    
+    statsDiv.innerHTML = html;
     resultsDiv.style.display = 'block';
 }
 
